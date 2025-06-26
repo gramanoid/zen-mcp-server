@@ -113,12 +113,12 @@ class ModelProviderRegistry:
         # Define explicit provider priority order
         # Native APIs first, then custom endpoints, then catch-all providers
         PROVIDER_PRIORITY_ORDER = [
-            ProviderType.GOOGLE,  # Direct Gemini access
+            # ProviderType.GOOGLE,  # Gemini now via OpenRouter
             ProviderType.OPENAI,  # Direct OpenAI access
             ProviderType.XAI,  # Direct X.AI GROK access
             ProviderType.DIAL,  # DIAL unified API access
             ProviderType.CUSTOM,  # Local/self-hosted models
-            ProviderType.OPENROUTER,  # Catch-all for cloud models
+            ProviderType.OPENROUTER,  # Catch-all for cloud models (including Gemini)
         ]
 
         # Check providers in priority order
@@ -230,7 +230,7 @@ class ModelProviderRegistry:
             API key string or None if not found
         """
         key_mapping = {
-            ProviderType.GOOGLE: "GEMINI_API_KEY",
+            # ProviderType.GOOGLE: "GEMINI_API_KEY",  # Gemini now via OpenRouter
             ProviderType.OPENAI: "OPENAI_API_KEY",
             ProviderType.XAI: "XAI_API_KEY",
             ProviderType.OPENROUTER: "OPENROUTER_API_KEY",

@@ -366,7 +366,7 @@ def configure_providers():
     from providers.base import ProviderType
     from providers.custom import CustomProvider
     from providers.dial import DIALModelProvider
-    from providers.gemini import GeminiModelProvider
+    # from providers.gemini import GeminiModelProvider  # Gemini now via OpenRouter
     from providers.openai_provider import OpenAIModelProvider
     from providers.openrouter import OpenRouterProvider
     from providers.xai import XAIModelProvider
@@ -377,12 +377,12 @@ def configure_providers():
     has_openrouter = False
     has_custom = False
 
-    # Check for Gemini API key
-    gemini_key = os.getenv("GEMINI_API_KEY")
-    if gemini_key and gemini_key != "your_gemini_api_key_here":
-        valid_providers.append("Gemini")
-        has_native_apis = True
-        logger.info("Gemini API key found - Gemini models available")
+    # Gemini models now available via OpenRouter - no longer using direct Gemini API
+    # gemini_key = os.getenv("GEMINI_API_KEY")
+    # if gemini_key and gemini_key != "your_gemini_api_key_here":
+    #     valid_providers.append("Gemini")
+    #     has_native_apis = True
+    #     logger.info("Gemini API key found - Gemini models available")
 
     # Check for OpenAI API key
     openai_key = os.getenv("OPENAI_API_KEY")
@@ -430,10 +430,9 @@ def configure_providers():
             logger.debug("No custom API key provided (using unauthenticated access)")
 
     # Register providers in priority order:
-    # 1. Native APIs first (most direct and efficient)
+    # 1. Native APIs first (most direct and efficient) - Gemini now via OpenRouter
     if has_native_apis:
-        if gemini_key and gemini_key != "your_gemini_api_key_here":
-            ModelProviderRegistry.register_provider(ProviderType.GOOGLE, GeminiModelProvider)
+        # Gemini provider no longer registered - models available via OpenRouter
         if openai_key and openai_key != "your_openai_api_key_here":
             ModelProviderRegistry.register_provider(ProviderType.OPENAI, OpenAIModelProvider)
         if xai_key and xai_key != "your_xai_api_key_here":
@@ -459,12 +458,12 @@ def configure_providers():
     if not valid_providers:
         raise ValueError(
             "At least one API configuration is required. Please set either:\n"
-            "- GEMINI_API_KEY for Gemini models\n"
+            "- OPENROUTER_API_KEY for OpenRouter (includes Gemini, Claude, GPT models)\n"
             "- OPENAI_API_KEY for OpenAI o3 model\n"
             "- XAI_API_KEY for X.AI GROK models\n"
             "- DIAL_API_KEY for DIAL models\n"
-            "- OPENROUTER_API_KEY for OpenRouter (multiple models)\n"
-            "- CUSTOM_API_URL for local models (Ollama, vLLM, etc.)"
+            "- CUSTOM_API_URL for local models (Ollama, vLLM, etc.)\n"
+            "Note: Gemini models are now accessed via OpenRouter"
         )
 
     logger.info(f"Available providers: {', '.join(valid_providers)}")
