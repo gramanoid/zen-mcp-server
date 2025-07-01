@@ -133,3 +133,11 @@ class XAIModelProvider(OpenAICompatibleProvider):
         # Currently GROK models do not support extended thinking
         # This may change with future GROK model releases
         return False
+
+# ---------------------------------------------------------------------------
+# Public exports
+# ---------------------------------------------------------------------------
+
+__all__ = [
+    "XAIModelProvider",
+]

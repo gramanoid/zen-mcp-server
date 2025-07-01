@@ -1,13 +1,27 @@
 """Gemini model provider implementation."""
 
+from __future__ import annotations
+
 import base64
 import logging
 import os
 import time
-from typing import Optional
+from typing import Optional, TYPE_CHECKING, Any
 
-import google.generativeai as genai
-from google.generativeai import types
+# ---------------------------------------------------------------------------
+# Lazy import of google.generativeai – this SDK is ~20-30 MB and slow to import.
+# We defer the actual import until the first time a Gemini provider is used.
+# When running static type checkers (mypy, pyright) TYPE_CHECKING is True so we
+# can still provide accurate type information without importing the heavy
+# runtime dependency.
+# ---------------------------------------------------------------------------
+
+if TYPE_CHECKING:
+    import google.generativeai as genai  # type: ignore
+    from google.generativeai import types  # type: ignore
+else:
+    genai = None  # type: ignore
+    types = Any  # type: ignore
 
 from .base import ModelCapabilities, ModelProvider, ModelResponse, ProviderType, create_temperature_constraint
 
@@ -122,9 +136,19 @@ class GeminiModelProvider(ModelProvider):
 
     @property
     def client(self):
-        """Lazy initialization of Gemini client."""
+        """Return a memoised Gemini client, importing SDK on demand."""
         if self._client is None:
-            self._client = genai.Client(api_key=self.api_key)
+            global genai  # noqa: PLW0603 – rebind global for lazy import
+
+            if genai is None:  # Runtime import the heavy module only now
+                import importlib
+
+                genai = importlib.import_module("google.generativeai")  # type: ignore
+                global types  # noqa: PLW0603
+                types = importlib.import_module("google.generativeai.types")  # type: ignore
+
+            self._client = genai.Client(api_key=self.api_key)  # type: ignore[attr-defined]
+
         return self._client
 
     def get_capabilities(self, model_name: str) -> ModelCapabilities:
@@ -192,7 +216,7 @@ class GeminiModelProvider(ModelProvider):
         contents = [{"parts": parts}]
 
         # Prepare generation config
-        generation_config = types.GenerateContentConfig(
+        generation_config = types.GenerateContentConfig(  # type: ignore[attr-defined]
             temperature=temperature,
             candidate_count=1,
         )
@@ -465,3 +489,11 @@ class GeminiModelProvider(ModelProvider):
         except Exception as e:
             logger.error(f"Error processing image {image_path}: {e}")
             return None
+
+# ---------------------------------------------------------------------------
+# Public exports
+# ---------------------------------------------------------------------------
+
+__all__ = [
+    "GeminiModelProvider",
+]

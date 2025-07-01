@@ -185,3 +185,11 @@ class OpenAIModelProvider(OpenAICompatibleProvider):
         # Currently no OpenAI models support extended thinking
         # This may change with future O3 models
         return False
+
+# ---------------------------------------------------------------------------
+# Public exports
+# ---------------------------------------------------------------------------
+
+__all__ = [
+    "OpenAIModelProvider",
+]

@@ -303,3 +303,11 @@ class OpenRouterProvider(OpenAICompatibleProvider):
         # Since aliases are now included in the configurations,
         # we can use the base class implementation
         return super().get_all_model_aliases()
+
+# ---------------------------------------------------------------------------
+# Public exports
+# ---------------------------------------------------------------------------
+
+__all__ = [
+    "OpenRouterProvider",
+]

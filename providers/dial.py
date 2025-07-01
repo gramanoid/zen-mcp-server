@@ -553,3 +553,11 @@ class DIALModelProvider(OpenAICompatibleProvider):
                 logger.debug("Closed superclass's OpenAI client")
             except Exception as e:
                 logger.warning(f"Error closing superclass's OpenAI client: {e}")
+
+# ---------------------------------------------------------------------------
+# Public exports
+# ---------------------------------------------------------------------------
+
+__all__ = [
+    "DIALModelProvider",
+]

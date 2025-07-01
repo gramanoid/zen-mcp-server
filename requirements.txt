@@ -1,10 +1,8 @@
-mcp>=1.0.0
-google-genai>=1.19.0
-openai>=1.55.2  # Minimum version for httpx 0.28.0 compatibility
-pydantic>=2.0.0
-python-dotenv>=1.0.0
+# Core dependencies for Zen MCP Server
+-r requirements-base.txt
 
-# Development dependencies (install with pip install -r requirements-dev.txt)
-# pytest>=7.4.0
-# pytest-asyncio>=0.21.0
-# pytest-mock>=3.11.0
+# Optional extras (install manually if you need those providers):
+#   pip install -r requirements-openai.txt   # OpenAI SDK
+#   pip install -r requirements-gemini.txt   # Google Gemini SDK
+
+# Development dependencies live in requirements-dev.txt
