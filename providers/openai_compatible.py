@@ -6,23 +6,23 @@ import logging
 import os
 import time
 from abc import abstractmethod
-from typing import Optional, TYPE_CHECKING, Any, Dict, Any as _Any
+from typing import Optional, TYPE_CHECKING, Any, Dict, cast
 from urllib.parse import urlparse
+from types import ModuleType
 
 if TYPE_CHECKING:
-    import httpx  # type: ignore
-    import tiktoken  # type: ignore
+    import httpx  # type: ignore  # lightweight when type checking
+    import tiktoken  # type: ignore  # tokeniser used only for counting
 
-    from openai import OpenAI  # type: ignore
-    from openai.types import APIError as OAAPIError  # type: ignore
-    from openai.types import RateLimitError as OARateLimitError  # type: ignore
-    from openai.types import Timeout as OATimeout  # type: ignore
+    from openai import OpenAI, APIError, RateLimitError, Timeout  # noqa: F401  # type: ignore
 else:
-    OpenAI = None  # type: ignore
-    from typing import Any as _Any
-    httpx: _Any = None  # type: ignore
-    tiktoken = None  # type: ignore
-    OAAPIError = OARateLimitError = OATimeout = Exception  # type: ignore
+    httpx = cast(ModuleType | None, None)  # type: ignore
+    tiktoken = cast(ModuleType | None, None)  # type: ignore
+
+    OpenAI = cast(Any, None)  # resolved lazily at runtime
+
+    # Generic Exception placeholders used for broad except clauses – keep narrow type when available
+    APIError = RateLimitError = Timeout = Exception  # type: ignore
 
 from .base import (
     ModelCapabilities,
@@ -842,3 +842,9 @@ class OpenAICompatibleProvider(ModelProvider):
 __all__ = [
     "OpenAICompatibleProvider",
 ]
+
+# ensure httpx symbol exists for runtime
+if not TYPE_CHECKING and httpx is None:
+    import importlib
+
+    httpx = importlib.import_module("httpx")  # type: ignore
