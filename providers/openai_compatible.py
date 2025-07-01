@@ -6,10 +6,13 @@ import logging
 import os
 import time
 from abc import abstractmethod
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 from urllib.parse import urlparse
 
-from openai import OpenAI
+if TYPE_CHECKING:
+    from openai import OpenAI  # type: ignore
+else:
+    OpenAI = None  # type: ignore
 
 from .base import (
     ModelCapabilities,
@@ -244,7 +247,13 @@ class OpenAICompatibleProvider(ModelProvider):
                 logging.debug(f"OpenAI client initialized with custom httpx client and timeout: {timeout_config}")
 
                 # Create OpenAI client with custom httpx client
-                self._client = OpenAI(**client_kwargs)
+                if OpenAI is None:
+                    from importlib import import_module
+
+                    _openai_mod = import_module("openai")
+                    globals()["OpenAI"] = getattr(_openai_mod, "OpenAI")
+
+                self._client = OpenAI(**client_kwargs)  # type: ignore
 
             except Exception as e:
                 # If all else fails, try absolute minimal client without custom httpx

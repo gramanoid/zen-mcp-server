@@ -957,6 +957,9 @@ async def handle_get_prompt(name: str, arguments: Optional[dict[str, Any]] = Non
             logger.error(f"Unknown prompt requested: {name}")
             raise ValueError(f"Unknown prompt: {name}")
 
+    # At this point template_info is guaranteed to be defined, but let\'s satisfy type checkers
+    assert template_info is not None  # noqa: S101 – runtime guarantee from above branch logic
+
     # Get the template
     template = template_info.get("template", f"Use {tool_name}")
 
