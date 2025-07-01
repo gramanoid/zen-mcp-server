@@ -1113,11 +1113,8 @@ def configure_providers() -> None:  # noqa: C901 – complex but central bootstr
         if not api_key or api_key.startswith("your_"):
             return  # No usable key
 
-        # Check restriction service – assumes canonical model name equals
-        # provider type shorthand (OPENAI, XAI, etc.) which is sufficient here
-        if not restriction_service.is_provider_allowed(ptype):  # type: ignore[attr-defined]
-            logger.info("Provider %s blocked by restriction policy", ptype.name)
-            return
+        # If restriction service defines allow-lists, it will filter models
+        # later when get_available_models() is called – no need to block here.
 
         # Lazy import of the heavy provider module
         module_path, cls_name = import_path.rsplit(".", 1)
@@ -1156,7 +1153,7 @@ def configure_providers() -> None:  # noqa: C901 – complex but central bootstr
         )
 
     logger.debug("Provider configuration complete – %d provider(s) available",
-                 len(ModelProviderRegistry._providers))  # type: ignore[attr-defined]
+                 len(ModelProviderRegistry.get_available_models()))
 
 
 async def main():
