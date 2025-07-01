@@ -13,4 +13,4 @@ fi
 
 source "$VENV/bin/activate"
 
-python server.py
+python -OO server.py

@@ -11,8 +11,20 @@ from urllib.parse import urlparse
 from types import ModuleType
 
 if TYPE_CHECKING:
-    import httpx  # type: ignore
-    import tiktoken  # type: ignore
+    # Import stubs if available; otherwise create dummy ModuleType so static analyzers do not raise unresolved-import.
+    try:
+        import httpx  # type: ignore
+    except ModuleNotFoundError:  # pragma: no cover
+        import sys
+        httpx = ModuleType("httpx")  # type: ignore
+        sys.modules["httpx"] = httpx
+
+    try:
+        import tiktoken  # type: ignore
+    except ModuleNotFoundError:  # pragma: no cover
+        import sys
+        tiktoken = ModuleType("tiktoken")  # type: ignore
+        sys.modules["tiktoken"] = tiktoken
 
     from openai import OpenAI  # type: ignore
     from openai.types import APIError, RateLimitError, Timeout  # type: ignore

@@ -489,3 +489,11 @@ class GeminiModelProvider(ModelProvider):
         except Exception as e:
             logger.error(f"Error processing image {image_path}: {e}")
             return None
+
+# ---------------------------------------------------------------------------
+# Public exports
+# ---------------------------------------------------------------------------
+
+__all__ = [
+    "GeminiModelProvider",
+]
