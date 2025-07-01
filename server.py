@@ -28,7 +28,7 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any, Optional
 
-from dotenv import load_dotenv
+from dotenv import load_dotenv  # type: ignore
 
 # Load environment variables from .env file in the script's directory
 # This ensures .env is loaded regardless of the current working directory
@@ -36,10 +36,10 @@ script_dir = Path(__file__).parent
 env_file = script_dir / ".env"
 load_dotenv(dotenv_path=env_file)
 
-from mcp.server import Server  # noqa: E402
-from mcp.server.models import InitializationOptions  # noqa: E402
-from mcp.server.stdio import stdio_server  # noqa: E402
-from mcp.types import (  # noqa: E402
+from mcp.server import Server  # type: ignore  # noqa: E402
+from mcp.server.models import InitializationOptions  # type: ignore  # noqa: E402
+from mcp.server.stdio import stdio_server  # type: ignore  # noqa: E402
+from mcp.types import (  # type: ignore  # noqa: E402
     GetPromptResult,
     Prompt,
     PromptMessage,
