@@ -74,6 +74,10 @@ from tools import (  # noqa: E402
 )
 from tools.models import ToolOutput  # noqa: E402
 
+# Lightweight imports – these modules are small and safe to import unconditionally.
+from providers import ModelProviderRegistry
+from providers.base import ProviderType
+
 # Configure logging for server operations
 # Can be controlled via LOG_LEVEL environment variable (DEBUG, INFO, WARNING, ERROR)
 log_level = os.getenv("LOG_LEVEL", "DEBUG").upper()
@@ -362,14 +366,14 @@ def configure_providers():
     Raises:
         ValueError: If no valid API keys are found or conflicting configurations detected
     """
-    from providers import ModelProviderRegistry
-    from providers.base import ProviderType
-    from providers.custom import CustomProvider
-    from providers.dial import DIALModelProvider
-    # from providers.gemini import GeminiModelProvider  # Gemini now via OpenRouter
-    from providers.openai_provider import OpenAIModelProvider
-    from providers.openrouter import OpenRouterProvider
-    from providers.xai import XAIModelProvider
+    # NOTE: Heavy provider modules (those that pull in large third-party SDKs such as
+    # `openai`, `google-generativeai`, etc.) are imported lazily **only** when we are
+    # certain they are required.  This avoids the overhead of importing sizeable
+    # dependencies during server start-up when the corresponding API key is not set.
+    # Doing so reduces cold-start latency and memory footprint, especially in
+    # serverless/container environments.
+
+    # Helper imported here to keep reference in closure without expensive imports.
     from utils.model_restrictions import get_restriction_service
 
     valid_providers = []
@@ -434,10 +438,17 @@ def configure_providers():
     if has_native_apis:
         # Gemini provider no longer registered - models available via OpenRouter
         if openai_key and openai_key != "your_openai_api_key_here":
+            # Import only when we actually need the OpenAI provider
+            from providers.openai_provider import OpenAIModelProvider  # noqa: WPS433 – intentional lazy import
+
             ModelProviderRegistry.register_provider(ProviderType.OPENAI, OpenAIModelProvider)
         if xai_key and xai_key != "your_xai_api_key_here":
+            from providers.xai import XAIModelProvider  # noqa: WPS433 – intentional lazy import
+
             ModelProviderRegistry.register_provider(ProviderType.XAI, XAIModelProvider)
         if dial_key and dial_key != "your_dial_api_key_here":
+            from providers.dial import DIALModelProvider  # noqa: WPS433 – intentional lazy import
+
             ModelProviderRegistry.register_provider(ProviderType.DIAL, DIALModelProvider)
 
     # 2. Custom provider second (for local/private models)
@@ -445,6 +456,8 @@ def configure_providers():
         # Factory function that creates CustomProvider with proper parameters
         def custom_provider_factory(api_key=None):
             # api_key is CUSTOM_API_KEY (can be empty for Ollama), base_url from CUSTOM_API_URL
+            from providers.custom import CustomProvider  # noqa: WPS433 – intentional lazy import
+
             base_url = os.getenv("CUSTOM_API_URL", "")
             return CustomProvider(api_key=api_key or "", base_url=base_url)  # Use provided API key or empty string
 
@@ -452,6 +465,8 @@ def configure_providers():
 
     # 3. OpenRouter last (catch-all for everything else)
     if has_openrouter:
+        from providers.openrouter import OpenRouterProvider  # noqa: WPS433 – intentional lazy import
+
         ModelProviderRegistry.register_provider(ProviderType.OPENROUTER, OpenRouterProvider)
 
     # Require at least one valid provider
