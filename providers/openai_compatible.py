@@ -6,22 +6,24 @@ import logging
 import os
 import time
 from abc import abstractmethod
-from typing import Optional, TYPE_CHECKING, Any, Dict, cast
+from typing import Optional, TYPE_CHECKING, Any, Dict, cast, Union
 from urllib.parse import urlparse
 from types import ModuleType
 
 if TYPE_CHECKING:
-    import httpx  # type: ignore  # lightweight when type checking
-    import tiktoken  # type: ignore  # tokeniser used only for counting
+    import httpx  # type: ignore  # used only for type checking
+    import tiktoken  # type: ignore
 
-    from openai import OpenAI, APIError, RateLimitError, Timeout  # noqa: F401  # type: ignore
+    from openai import OpenAI  # type: ignore
+    from openai.types import APIError, RateLimitError, Timeout  # type: ignore
 else:
-    httpx = cast(ModuleType | None, None)  # type: ignore
-    tiktoken = cast(ModuleType | None, None)  # type: ignore
+    # Runtime placeholders; replaced on-demand via importlib when first needed
+    httpx = cast(ModuleType, None)  # type: ignore
+    tiktoken = cast(ModuleType, None)  # type: ignore
 
-    OpenAI = cast(Any, None)  # resolved lazily at runtime
+    OpenAI = cast(Any, None)  # type: ignore
 
-    # Generic Exception placeholders used for broad except clauses – keep narrow type when available
+    # Fallback exception aliases if openai.types not imported yet
     APIError = RateLimitError = Timeout = Exception  # type: ignore
 
 from .base import (
@@ -110,10 +112,11 @@ class OpenAICompatibleProvider(ModelProvider):
         Returns:
             httpx.Timeout object with appropriate timeout settings
         """
+        global httpx  # noqa: PLW0603
         if httpx is None:  # runtime import to avoid heavy import at startup
             import importlib
 
-            globals()["httpx"] = importlib.import_module("httpx")  # type: ignore
+            httpx = importlib.import_module("httpx")  # type: ignore
         import httpx
 
         # Default timeouts - more generous for custom/local endpoints
@@ -336,12 +339,12 @@ class OpenAICompatibleProvider(ModelProvider):
         for attempt in range(max_retries):
             try:
                 # Log the exact payload being sent for debugging
-                import json
+                import json as _json
 
-                logging.info(f"o3-pro API request payload: {json.dumps(completion_params, indent=2)}")
+                logging.info("o3-pro API request payload: %s", _json.dumps(completion_params, indent=2))
 
                 # Use OpenAI client's responses endpoint
-                response = self.client.responses.create(**completion_params)
+                response: Any = self.client.responses.create(**completion_params)
 
                 # Extract content and usage from responses endpoint format
                 # The response format is different for responses endpoint
@@ -843,8 +846,12 @@ __all__ = [
     "OpenAICompatibleProvider",
 ]
 
-# ensure httpx symbol exists for runtime
+# Ensure global httpx resolved at module import for callers that directly use it
 if not TYPE_CHECKING and httpx is None:
-    import importlib
+    import importlib as _importlib
 
-    httpx = importlib.import_module("httpx")  # type: ignore
+    try:
+        httpx = _importlib.import_module("httpx")  # type: ignore
+    except ModuleNotFoundError:
+        # httpx extra not installed; runtime will import when provider actually used
+        pass
