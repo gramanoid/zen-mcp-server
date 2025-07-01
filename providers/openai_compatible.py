@@ -6,7 +6,7 @@ import logging
 import os
 import time
 from abc import abstractmethod
-from typing import Optional, TYPE_CHECKING, Any, Dict, cast, Union
+from typing import Optional, TYPE_CHECKING, Any, Dict, cast
 from urllib.parse import urlparse
 from types import ModuleType
 
