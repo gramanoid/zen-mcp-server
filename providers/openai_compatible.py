@@ -11,20 +11,22 @@ from urllib.parse import urlparse
 from types import ModuleType
 
 if TYPE_CHECKING:
-    import httpx  # type: ignore  # used only for type checking
+    import httpx  # type: ignore
     import tiktoken  # type: ignore
 
     from openai import OpenAI  # type: ignore
     from openai.types import APIError, RateLimitError, Timeout  # type: ignore
 else:
-    # Runtime placeholders; replaced on-demand via importlib when first needed
-    httpx = cast(ModuleType, None)  # type: ignore
-    tiktoken = cast(ModuleType, None)  # type: ignore
+    # Create runtime placeholders; they will be swapped with real modules when lazily imported.
+    httpx = cast(ModuleType, None)  # type: ignore[var-annotated]
+    tiktoken = cast(ModuleType, None)  # type: ignore[var-annotated]
 
-    OpenAI = cast(Any, None)  # type: ignore
+    OpenAI = cast(Any, None)  # type: ignore[var-annotated]
 
-    # Fallback exception aliases if openai.types not imported yet
-    APIError = RateLimitError = Timeout = Exception  # type: ignore
+    class APIError(Exception):  # noqa: D401 – simple placeholder
+        """Placeholder APIError when OpenAI SDK is not imported."""
+
+    RateLimitError = Timeout = APIError  # type: ignore[var-annotated]
 
 from .base import (
     ModelCapabilities,
@@ -113,10 +115,11 @@ class OpenAICompatibleProvider(ModelProvider):
             httpx.Timeout object with appropriate timeout settings
         """
         global httpx  # noqa: PLW0603
-        if httpx is None:  # runtime import to avoid heavy import at startup
+        if httpx is None:  # Runtime import at first actual use
             import importlib
 
-            httpx = importlib.import_module("httpx")  # type: ignore
+            httpx = importlib.import_module("httpx")  # type: ignore[var-annotated]
+
         import httpx
 
         # Default timeouts - more generous for custom/local endpoints
@@ -344,7 +347,7 @@ class OpenAICompatibleProvider(ModelProvider):
                 logging.info("o3-pro API request payload: %s", _json.dumps(completion_params, indent=2))
 
                 # Use OpenAI client's responses endpoint
-                response: Any = self.client.responses.create(**completion_params)
+                response: Any = self.client.responses.create(**completion_params)  # type: ignore[attr-defined]
 
                 # Extract content and usage from responses endpoint format
                 # The response format is different for responses endpoint
@@ -851,7 +854,7 @@ if not TYPE_CHECKING and httpx is None:
     import importlib as _importlib
 
     try:
-        httpx = _importlib.import_module("httpx")  # type: ignore
+        httpx = _importlib.import_module("httpx")  # type: ignore[var-annotated]
     except ModuleNotFoundError:
-        # httpx extra not installed; runtime will import when provider actually used
+        # httpx extra not installed; runtime will import when provider actually used.
         pass
