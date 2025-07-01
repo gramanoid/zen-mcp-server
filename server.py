@@ -254,305 +254,49 @@ def filter_disabled_tools(all_tools: dict[str, Any]) -> dict[str, Any]:
     return enabled_tools
 
 
-# Initialize the tool registry with all available AI-powered tools
-# Each tool provides specialized functionality for different development tasks
-# Tools are instantiated once and reused across requests (stateless design)
-TOOLS = {
-    "chat": ChatTool(),  # Interactive development chat and brainstorming
-    "thinkdeep": ThinkDeepTool(),  # Step-by-step deep thinking workflow with expert analysis
-    "planner": PlannerTool(),  # Interactive sequential planner using workflow architecture
-    "consensus": ConsensusTool(),  # Step-by-step consensus workflow with multi-model analysis
-    "codereview": CodeReviewTool(),  # Comprehensive step-by-step code review workflow with expert analysis
-    "precommit": PrecommitTool(),  # Step-by-step pre-commit validation workflow
-    "debug": DebugIssueTool(),  # Root cause analysis and debugging assistance
-    "secaudit": SecauditTool(),  # Comprehensive security audit with OWASP Top 10 and compliance coverage
-    "docgen": DocgenTool(),  # Step-by-step documentation generation with complexity analysis
-    "analyze": AnalyzeTool(),  # General-purpose file and code analysis
-    "refactor": RefactorTool(),  # Step-by-step refactoring analysis workflow with expert validation
-    "tracer": TracerTool(),  # Static call path prediction and control flow analysis
-    "testgen": TestGenTool(),  # Step-by-step test generation workflow with expert validation
-    "listmodels": ListModelsTool(),  # List all available AI models by provider
-    "version": VersionTool(),  # Display server version and system information
-}
-TOOLS = filter_disabled_tools(TOOLS)
+from functools import lru_cache
 
-# Rich prompt templates for all tools
-PROMPT_TEMPLATES = {
-    "chat": {
-        "name": "chat",
-        "description": "Chat and brainstorm ideas",
-        "template": "Chat with {model} about this",
-    },
-    "thinkdeep": {
-        "name": "thinkdeeper",
-        "description": "Step-by-step deep thinking workflow with expert analysis",
-        "template": "Start comprehensive deep thinking workflow with {model} using {thinking_mode} thinking mode",
-    },
-    "planner": {
-        "name": "planner",
-        "description": "Break down complex ideas, problems, or projects into multiple manageable steps",
-        "template": "Create a detailed plan with {model}",
-    },
-    "consensus": {
-        "name": "consensus",
-        "description": "Step-by-step consensus workflow with multi-model analysis",
-        "template": "Start comprehensive consensus workflow with {model}",
-    },
-    "codereview": {
-        "name": "review",
-        "description": "Perform a comprehensive code review",
-        "template": "Perform a comprehensive code review with {model}",
-    },
-    "precommit": {
-        "name": "precommit",
-        "description": "Step-by-step pre-commit validation workflow",
-        "template": "Start comprehensive pre-commit validation workflow with {model}",
-    },
-    "debug": {
-        "name": "debug",
-        "description": "Debug an issue or error",
-        "template": "Help debug this issue with {model}",
-    },
-    "secaudit": {
-        "name": "secaudit",
-        "description": "Comprehensive security audit with OWASP Top 10 coverage",
-        "template": "Perform comprehensive security audit with {model}",
-    },
-    "docgen": {
-        "name": "docgen",
-        "description": "Generate comprehensive code documentation with complexity analysis",
-        "template": "Generate comprehensive documentation with {model}",
-    },
-    "analyze": {
-        "name": "analyze",
-        "description": "Analyze files and code structure",
-        "template": "Analyze these files with {model}",
-    },
-    "refactor": {
-        "name": "refactor",
-        "description": "Refactor and improve code structure",
-        "template": "Refactor this code with {model}",
-    },
-    "tracer": {
-        "name": "tracer",
-        "description": "Trace code execution paths",
-        "template": "Generate tracer analysis with {model}",
-    },
-    "testgen": {
-        "name": "testgen",
-        "description": "Generate comprehensive tests",
-        "template": "Generate comprehensive tests with {model}",
-    },
-    "listmodels": {
-        "name": "listmodels",
-        "description": "List available AI models",
-        "template": "List all available models",
-    },
-    "version": {
-        "name": "version",
-        "description": "Show server version and system information",
-        "template": "Show Zen MCP Server version",
-    },
+# ---------------------------------------------------------------------------
+# Lazy tool registry
+# ---------------------------------------------------------------------------
+# We keep a mapping of tool name → class (NOT instance) to avoid importing heavy
+# dependencies and running potentially expensive __init__ logic for every tool
+# at server start-up.  Tools are instantiated **on first use** via the
+# get_tool_instance helper which memoises the instance so each tool is only
+# created once during the process lifetime.
+
+_TOOL_CLASSES = {
+    "chat": ChatTool,
+    "thinkdeep": ThinkDeepTool,
+    "planner": PlannerTool,
+    "consensus": ConsensusTool,
+    "codereview": CodeReviewTool,
+    "precommit": PrecommitTool,
+    "debug": DebugIssueTool,
+    "secaudit": SecauditTool,
+    "docgen": DocgenTool,
+    "analyze": AnalyzeTool,
+    "refactor": RefactorTool,
+    "tracer": TracerTool,
+    "testgen": TestGenTool,
+    "listmodels": ListModelsTool,
+    "version": VersionTool,
 }
 
+# Respect DISABLED_TOOLS environment variable before exposing to MCP
+_TOOL_CLASSES = filter_disabled_tools(_TOOL_CLASSES)
 
-def configure_providers():
-    """
-    Configure and validate AI providers based on available API keys.
 
-    This function checks for API keys and registers the appropriate providers.
-    At least one valid API key (Gemini or OpenAI) is required.
+@lru_cache(maxsize=None)
+def _get_tool_instance(name: str):
+    """Return a cached tool instance given its *canonical* name."""
+    cls = _TOOL_CLASSES[name]
+    return cls()
 
-    Raises:
-        ValueError: If no valid API keys are found or conflicting configurations detected
-    """
-    # NOTE: Heavy provider modules (those that pull in large third-party SDKs such as
-    # `openai`, `google-generativeai`, etc.) are imported lazily **only** when we are
-    # certain they are required.  This avoids the overhead of importing sizeable
-    # dependencies during server start-up when the corresponding API key is not set.
-    # Doing so reduces cold-start latency and memory footprint, especially in
-    # serverless/container environments.
 
-    # Helper imported here to keep reference in closure without expensive imports.
-    from utils.model_restrictions import get_restriction_service
-
-    valid_providers = []
-    has_native_apis = False
-    has_openrouter = False
-    has_custom = False
-
-    # Gemini models now available via OpenRouter - no longer using direct Gemini API
-    # gemini_key = os.getenv("GEMINI_API_KEY")
-    # if gemini_key and gemini_key != "your_gemini_api_key_here":
-    #     valid_providers.append("Gemini")
-    #     has_native_apis = True
-    #     logger.info("Gemini API key found - Gemini models available")
-
-    # Check for OpenAI API key
-    openai_key = os.getenv("OPENAI_API_KEY")
-    if openai_key and openai_key != "your_openai_api_key_here":
-        valid_providers.append("OpenAI (o3)")
-        has_native_apis = True
-        logger.info("OpenAI API key found - o3 model available")
-
-    # Check for X.AI API key
-    xai_key = os.getenv("XAI_API_KEY")
-    if xai_key and xai_key != "your_xai_api_key_here":
-        valid_providers.append("X.AI (GROK)")
-        has_native_apis = True
-        logger.info("X.AI API key found - GROK models available")
-
-    # Check for DIAL API key
-    dial_key = os.getenv("DIAL_API_KEY")
-    if dial_key and dial_key != "your_dial_api_key_here":
-        valid_providers.append("DIAL")
-        has_native_apis = True
-        logger.info("DIAL API key found - DIAL models available")
-
-    # Check for OpenRouter API key
-    openrouter_key = os.getenv("OPENROUTER_API_KEY")
-    if openrouter_key and openrouter_key != "your_openrouter_api_key_here":
-        valid_providers.append("OpenRouter")
-        has_openrouter = True
-        logger.info("OpenRouter API key found - Multiple models available via OpenRouter")
-
-    # Check for custom API endpoint (Ollama, vLLM, etc.)
-    custom_url = os.getenv("CUSTOM_API_URL")
-    if custom_url:
-        # IMPORTANT: Always read CUSTOM_API_KEY even if empty
-        # - Some providers (vLLM, LM Studio, enterprise APIs) require authentication
-        # - Others (Ollama) work without authentication (empty key)
-        # - DO NOT remove this variable - it's needed for provider factory function
-        custom_key = os.getenv("CUSTOM_API_KEY", "")  # Default to empty (Ollama doesn't need auth)
-        custom_model = os.getenv("CUSTOM_MODEL_NAME", "llama3.2")
-        valid_providers.append(f"Custom API ({custom_url})")
-        has_custom = True
-        logger.info(f"Custom API endpoint found: {custom_url} with model {custom_model}")
-        if custom_key:
-            logger.debug("Custom API key provided for authentication")
-        else:
-            logger.debug("No custom API key provided (using unauthenticated access)")
-
-    # Register providers in priority order:
-    # 1. Native APIs first (most direct and efficient) - Gemini now via OpenRouter
-    if has_native_apis:
-        # Gemini provider no longer registered - models available via OpenRouter
-        if openai_key and openai_key != "your_openai_api_key_here":
-            # Import only when we actually need the OpenAI provider
-            from providers.openai_provider import OpenAIModelProvider  # noqa: WPS433 – intentional lazy import
-
-            ModelProviderRegistry.register_provider(ProviderType.OPENAI, OpenAIModelProvider)
-        if xai_key and xai_key != "your_xai_api_key_here":
-            from providers.xai import XAIModelProvider  # noqa: WPS433 – intentional lazy import
-
-            ModelProviderRegistry.register_provider(ProviderType.XAI, XAIModelProvider)
-        if dial_key and dial_key != "your_dial_api_key_here":
-            from providers.dial import DIALModelProvider  # noqa: WPS433 – intentional lazy import
-
-            ModelProviderRegistry.register_provider(ProviderType.DIAL, DIALModelProvider)
-
-    # 2. Custom provider second (for local/private models)
-    if has_custom:
-        # Factory function that creates CustomProvider with proper parameters
-        def custom_provider_factory(api_key=None):
-            # api_key is CUSTOM_API_KEY (can be empty for Ollama), base_url from CUSTOM_API_URL
-            from providers.custom import CustomProvider  # noqa: WPS433 – intentional lazy import
-
-            base_url = os.getenv("CUSTOM_API_URL", "")
-            return CustomProvider(api_key=api_key or "", base_url=base_url)  # Use provided API key or empty string
-
-        ModelProviderRegistry.register_provider(ProviderType.CUSTOM, custom_provider_factory)
-
-    # 3. OpenRouter last (catch-all for everything else)
-    if has_openrouter:
-        from providers.openrouter import OpenRouterProvider  # noqa: WPS433 – intentional lazy import
-
-        ModelProviderRegistry.register_provider(ProviderType.OPENROUTER, OpenRouterProvider)
-
-    # Require at least one valid provider
-    if not valid_providers:
-        raise ValueError(
-            "At least one API configuration is required. Please set either:\n"
-            "- OPENROUTER_API_KEY for OpenRouter (includes Gemini, Claude, GPT models)\n"
-            "- OPENAI_API_KEY for OpenAI o3 model\n"
-            "- XAI_API_KEY for X.AI GROK models\n"
-            "- DIAL_API_KEY for DIAL models\n"
-            "- CUSTOM_API_URL for local models (Ollama, vLLM, etc.)\n"
-            "Note: Gemini models are now accessed via OpenRouter"
-        )
-
-    logger.info(f"Available providers: {', '.join(valid_providers)}")
-
-    # Log provider priority
-    priority_info = []
-    if has_native_apis:
-        priority_info.append("Native APIs (Gemini, OpenAI)")
-    if has_custom:
-        priority_info.append("Custom endpoints")
-    if has_openrouter:
-        priority_info.append("OpenRouter (catch-all)")
-
-    if len(priority_info) > 1:
-        logger.info(f"Provider priority: {' → '.join(priority_info)}")
-
-    # Register cleanup function for providers
-    def cleanup_providers():
-        """Clean up all registered providers on shutdown."""
-        try:
-            registry = ModelProviderRegistry()
-            if hasattr(registry, "_initialized_providers"):
-                for provider in list(registry._initialized_providers.items()):
-                    try:
-                        if provider and hasattr(provider, "close"):
-                            provider.close()
-                    except Exception:
-                        # Logger might be closed during shutdown
-                        pass
-        except Exception:
-            # Silently ignore any errors during cleanup
-            pass
-
-    atexit.register(cleanup_providers)
-
-    # Check and log model restrictions
-    restriction_service = get_restriction_service()
-    restrictions = restriction_service.get_restriction_summary()
-
-    if restrictions:
-        logger.info("Model restrictions configured:")
-        for provider_name, allowed_models in restrictions.items():
-            if isinstance(allowed_models, list):
-                logger.info(f"  {provider_name}: {', '.join(allowed_models)}")
-            else:
-                logger.info(f"  {provider_name}: {allowed_models}")
-
-        # Validate restrictions against known models
-        provider_instances = {}
-        provider_types_to_validate = [ProviderType.GOOGLE, ProviderType.OPENAI, ProviderType.XAI, ProviderType.DIAL]
-        for provider_type in provider_types_to_validate:
-            provider = ModelProviderRegistry.get_provider(provider_type)
-            if provider:
-                provider_instances[provider_type] = provider
-
-        if provider_instances:
-            restriction_service.validate_against_known_models(provider_instances)
-    else:
-        logger.info("No model restrictions configured - all models allowed")
-
-    # Check if auto mode has any models available after restrictions
-    from config import IS_AUTO_MODE
-
-    if IS_AUTO_MODE:
-        available_models = ModelProviderRegistry.get_available_models(respect_restrictions=True)
-        if not available_models:
-            logger.error(
-                "Auto mode is enabled but no models are available after applying restrictions. "
-                "Please check your OPENAI_ALLOWED_MODELS and GOOGLE_ALLOWED_MODELS settings."
-            )
-            raise ValueError(
-                "No models available for auto mode due to restrictions. "
-                "Please adjust your allowed model settings or disable auto mode."
-            )
+# Public helper so other modules could reuse if needed
+def get_available_tool_names() -> list[str]:
+    return list(_TOOL_CLASSES.keys())
 
 
 @server.list_tools()
@@ -573,7 +317,8 @@ async def handle_list_tools() -> list[Tool]:
     tools = []
 
     # Add all registered AI-powered tools from the TOOLS registry
-    for tool in TOOLS.values():
+    for tool_name in get_available_tool_names():
+        tool = _get_tool_instance(tool_name)
         # Get optional annotations from the tool
         annotations = tool.get_annotations()
         tool_annotations = ToolAnnotations(**annotations) if annotations else None
@@ -684,9 +429,9 @@ async def handle_call_tool(name: str, arguments: dict[str, Any]) -> list[TextCon
             logger.debug(f"[CONVERSATION_DEBUG] Remaining token budget: {arguments['_remaining_tokens']:,}")
 
     # Route to AI-powered tools that require Gemini API calls
-    if name in TOOLS:
+    if name in _TOOL_CLASSES:
         logger.info(f"Executing tool '{name}' with {len(arguments)} parameter(s)")
-        tool = TOOLS[name]
+        tool = _get_tool_instance(name)
 
         # EARLY MODEL RESOLUTION AT MCP BOUNDARY
         # Resolve model before passing to tool - this ensures consistent model handling
@@ -815,7 +560,7 @@ def parse_model_option(model_string: str) -> tuple[str, Optional[str]]:
     return model_string.strip(), None
 
 
-def get_follow_up_instructions(current_turn_count: int, max_turns: int = None) -> str:
+def get_follow_up_instructions(current_turn_count: int, max_turns: int | None = None) -> str:
     """
     Generate dynamic follow-up instructions based on conversation turn count.
 
@@ -830,6 +575,9 @@ def get_follow_up_instructions(current_turn_count: int, max_turns: int = None) -
         from utils.conversation_memory import MAX_CONVERSATION_TURNS
 
         max_turns = MAX_CONVERSATION_TURNS
+
+    # mypy safeguard – by this point max_turns is guaranteed non-None
+    assert max_turns is not None
 
     if current_turn_count >= max_turns - 1:
         # We're at or approaching the turn limit - no more follow-ups
@@ -1111,7 +859,8 @@ async def handle_list_prompts() -> list[Prompt]:
     prompts = []
 
     # Add a prompt for each tool with rich templates
-    for tool_name, tool in TOOLS.items():
+    for tool_name in get_available_tool_names():
+        tool = _get_tool_instance(tool_name)
         if tool_name in PROMPT_TEMPLATES:
             # Use the rich template
             template_info = PROMPT_TEMPLATES[tool_name]
@@ -1126,7 +875,7 @@ async def handle_list_prompts() -> list[Prompt]:
             # Fallback for any tools without templates (shouldn't happen)
             prompts.append(
                 Prompt(
-                    name=tool_name,
+                    name=tool.name,
                     description=f"Use {tool.name} tool",
                     arguments=[],
                 )
@@ -1146,7 +895,7 @@ async def handle_list_prompts() -> list[Prompt]:
 
 
 @server.get_prompt()
-async def handle_get_prompt(name: str, arguments: dict[str, Any] = None) -> GetPromptResult:
+async def handle_get_prompt(name: str, arguments: Optional[dict[str, Any]] = None) -> GetPromptResult:
     """
     Get prompt details and generate the actual prompt text.
 
@@ -1168,6 +917,9 @@ async def handle_get_prompt(name: str, arguments: dict[str, Any] = None) -> GetP
     Raises:
         ValueError: If the prompt name is unknown
     """
+    if arguments is None:
+        arguments = {}
+
     logger.debug(f"MCP client requested prompt: {name} with args: {arguments}")
 
     # Handle special "continue" case
@@ -1193,7 +945,7 @@ async def handle_get_prompt(name: str, arguments: dict[str, Any] = None) -> GetP
                 break
 
         # If not found, check if it's a direct tool name
-        if not tool_name and name in TOOLS:
+        if not tool_name and name in _TOOL_CLASSES:
             tool_name = name
             template_info = {
                 "name": name,
@@ -1248,6 +1000,165 @@ async def handle_get_prompt(name: str, arguments: dict[str, Any] = None) -> GetP
     )
 
 
+# ---------------------------------------------------------------------------
+# Rich prompt templates (moved below lazy registry for clarity)
+# ---------------------------------------------------------------------------
+
+PROMPT_TEMPLATES: dict[str, dict[str, str]] = {
+    "chat": {
+        "name": "chat",
+        "description": "Chat and brainstorm ideas",
+        "template": "Chat with {model} about this",
+    },
+    "thinkdeep": {
+        "name": "thinkdeeper",
+        "description": "Step-by-step deep thinking workflow with expert analysis",
+        "template": "Start comprehensive deep thinking workflow with {model} using {thinking_mode} thinking mode",
+    },
+    "planner": {
+        "name": "planner",
+        "description": "Break down complex ideas, problems, or projects into multiple manageable steps",
+        "template": "Create a detailed plan with {model}",
+    },
+    "consensus": {
+        "name": "consensus",
+        "description": "Step-by-step consensus workflow with multi-model analysis",
+        "template": "Start comprehensive consensus workflow with {model}",
+    },
+    "codereview": {
+        "name": "review",
+        "description": "Perform a comprehensive code review",
+        "template": "Perform a comprehensive code review with {model}",
+    },
+    "precommit": {
+        "name": "precommit",
+        "description": "Step-by-step pre-commit validation workflow",
+        "template": "Start comprehensive pre-commit validation workflow with {model}",
+    },
+    "debug": {
+        "name": "debug",
+        "description": "Debug an issue or error",
+        "template": "Help debug this issue with {model}",
+    },
+    "secaudit": {
+        "name": "secaudit",
+        "description": "Comprehensive security audit with OWASP Top 10 coverage",
+        "template": "Perform comprehensive security audit with {model}",
+    },
+    "docgen": {
+        "name": "docgen",
+        "description": "Generate comprehensive code documentation with complexity analysis",
+        "template": "Generate comprehensive documentation with {model}",
+    },
+    "analyze": {
+        "name": "analyze",
+        "description": "Analyze files and code structure",
+        "template": "Analyze these files with {model}",
+    },
+    "refactor": {
+        "name": "refactor",
+        "description": "Refactor and improve code structure",
+        "template": "Refactor this code with {model}",
+    },
+    "tracer": {
+        "name": "tracer",
+        "description": "Trace code execution paths",
+        "template": "Generate tracer analysis with {model}",
+    },
+    "testgen": {
+        "name": "testgen",
+        "description": "Generate comprehensive tests",
+        "template": "Generate comprehensive tests with {model}",
+    },
+    "listmodels": {
+        "name": "listmodels",
+        "description": "List available AI models",
+        "template": "List all available models",
+    },
+    "version": {
+        "name": "version",
+        "description": "Show server version and system information",
+        "template": "Show Zen MCP Server version",
+    },
+}
+
+
+# ---------------------------------------------------------------------------
+# Provider configuration (streamlined)
+# ---------------------------------------------------------------------------
+
+
+def configure_providers() -> None:  # noqa: C901 – complex but central bootstrap
+    """Register available model providers based on detected API keys.
+
+    This re-implements the previous lengthy logic in a more compact way whilst
+    retaining the *lazy-import* strategy introduced earlier.  We only import a
+    heavy provider module (which in turn pulls in large SDKs) when we can
+    confirm via environment variables that the user intends to use that
+    provider.
+    """
+
+    from providers import ModelProviderRegistry  # local import to avoid cycles
+    from providers.base import ProviderType
+    from utils.model_restrictions import get_restriction_service
+
+    logger.debug("Configuring model providers …")
+
+    restriction_service = get_restriction_service()
+
+    # Helper inner function to register a provider *only* if it's enabled by
+    # both the presence of an API key and the restriction service.
+    def _safe_register(ptype: ProviderType, import_path: str, key_env: str) -> None:
+        api_key = os.getenv(key_env)
+        if not api_key or api_key.startswith("your_"):
+            return  # No usable key
+
+        # Check restriction service – assumes canonical model name equals
+        # provider type shorthand (OPENAI, XAI, etc.) which is sufficient here
+        if not restriction_service.is_provider_allowed(ptype):  # type: ignore[attr-defined]
+            logger.info("Provider %s blocked by restriction policy", ptype.name)
+            return
+
+        # Lazy import of the heavy provider module
+        module_path, cls_name = import_path.rsplit(".", 1)
+        provider_cls = getattr(__import__(module_path, fromlist=[cls_name]), cls_name)
+
+        ModelProviderRegistry.register_provider(ptype, provider_cls)
+        logger.info("Provider %s registered", ptype.name)
+
+    # Native APIs -----------------------------------------------------------
+    _safe_register(ProviderType.OPENAI, "providers.openai_provider.OpenAIModelProvider", "OPENAI_API_KEY")
+    _safe_register(ProviderType.XAI, "providers.xai.XAIModelProvider", "XAI_API_KEY")
+    _safe_register(ProviderType.DIAL, "providers.dial.DIALModelProvider", "DIAL_API_KEY")
+
+    # Custom provider (local LLMs) -----------------------------------------
+    if os.getenv("CUSTOM_API_URL"):
+        from providers.custom import CustomProvider  # noqa: WPS433 – lazy import (small)
+
+        def _factory(api_key: str | None = None):
+            return CustomProvider(api_key=api_key or os.getenv("CUSTOM_API_KEY", ""),
+                                  base_url=os.getenv("CUSTOM_API_URL", ""))
+
+        ModelProviderRegistry.register_provider(ProviderType.CUSTOM, _factory)  # type: ignore[arg-type]
+        logger.info("Custom provider registered for %s", os.getenv("CUSTOM_API_URL"))
+
+    # OpenRouter – catch-all last -----------------------------------------
+    if os.getenv("OPENROUTER_API_KEY"):
+        from providers.openrouter import OpenRouterProvider  # noqa: WPS433 – lazy import
+
+        ModelProviderRegistry.register_provider(ProviderType.OPENROUTER, OpenRouterProvider)
+        logger.info("OpenRouter provider registered")
+
+    # Final sanity check ----------------------------------------------------
+    if not ModelProviderRegistry.get_available_models():
+        raise ValueError(
+            "No model providers could be configured – please supply at least one API key."
+        )
+
+    logger.debug("Provider configuration complete – %d provider(s) available",
+                 len(ModelProviderRegistry._providers))  # type: ignore[attr-defined]
+
+
 async def main():
     """
     Main entry point for the MCP server.
@@ -1279,7 +1190,7 @@ async def main():
 
     logger.info(f"Default thinking mode (ThinkDeep): {DEFAULT_THINKING_MODE_THINKDEEP}")
 
-    logger.info(f"Available tools: {list(TOOLS.keys())}")
+    logger.info(f"Available tools: {get_available_tool_names()}")
     logger.info("Server ready - waiting for tool requests...")
 
     # Run the server using stdio transport (standard input/output)
