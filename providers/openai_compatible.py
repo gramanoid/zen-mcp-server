@@ -6,13 +6,23 @@ import logging
 import os
 import time
 from abc import abstractmethod
-from typing import Optional, TYPE_CHECKING
+from typing import Optional, TYPE_CHECKING, Any, Dict, Any as _Any
 from urllib.parse import urlparse
 
 if TYPE_CHECKING:
+    import httpx  # type: ignore
+    import tiktoken  # type: ignore
+
     from openai import OpenAI  # type: ignore
+    from openai.types import APIError as OAAPIError  # type: ignore
+    from openai.types import RateLimitError as OARateLimitError  # type: ignore
+    from openai.types import Timeout as OATimeout  # type: ignore
 else:
     OpenAI = None  # type: ignore
+    from typing import Any as _Any
+    httpx: _Any = None  # type: ignore
+    tiktoken = None  # type: ignore
+    OAAPIError = OARateLimitError = OATimeout = Exception  # type: ignore
 
 from .base import (
     ModelCapabilities,
@@ -34,7 +44,7 @@ class OpenAICompatibleProvider(ModelProvider):
     DEFAULT_HEADERS = {}
     FRIENDLY_NAME = "OpenAI Compatible"
 
-    def __init__(self, api_key: str, base_url: str = None, **kwargs):
+    def __init__(self, api_key: str, base_url: Optional[str] = None, **kwargs: Any):
         """Initialize the provider with API key and optional base URL.
 
         Args:
@@ -89,7 +99,7 @@ class OpenAICompatibleProvider(ModelProvider):
 
         return None
 
-    def _configure_timeouts(self, **kwargs):
+    def _configure_timeouts(self, **kwargs: Any):
         """Configure timeout settings based on provider type and custom settings.
 
         Custom URLs and local models often need longer timeouts due to:
@@ -100,6 +110,10 @@ class OpenAICompatibleProvider(ModelProvider):
         Returns:
             httpx.Timeout object with appropriate timeout settings
         """
+        if httpx is None:  # runtime import to avoid heavy import at startup
+            import importlib
+
+            globals()["httpx"] = importlib.import_module("httpx")  # type: ignore
         import httpx
 
         # Default timeouts - more generous for custom/local endpoints
@@ -317,7 +331,7 @@ class OpenAICompatibleProvider(ModelProvider):
         # Retry logic with progressive delays
         max_retries = 4
         retry_delays = [1, 3, 5, 8]
-        last_exception = None
+        last_exception: Exception | None = None
 
         for attempt in range(max_retries):
             try:
@@ -343,7 +357,7 @@ class OpenAICompatibleProvider(ModelProvider):
                         content = response.output.text
 
                 # Try to extract usage information
-                usage = None
+                usage: Dict[str, int] | None = None
                 if hasattr(response, "usage"):
                     usage = self._extract_usage(response)
                 elif hasattr(response, "input_tokens") and hasattr(response, "output_tokens"):
@@ -358,7 +372,7 @@ class OpenAICompatibleProvider(ModelProvider):
 
                 return ModelResponse(
                     content=content,
-                    usage=usage,
+                    usage=usage or {},
                     model_name=model_name,
                     friendly_name=self.FRIENDLY_NAME,
                     provider=self.get_provider_type(),
@@ -399,7 +413,7 @@ class OpenAICompatibleProvider(ModelProvider):
         temperature: float = 0.7,
         max_output_tokens: Optional[int] = None,
         images: Optional[list[str]] = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> ModelResponse:
         """Generate content using the OpenAI-compatible API.
 
@@ -504,7 +518,7 @@ class OpenAICompatibleProvider(ModelProvider):
         max_retries = 4  # Total of 4 attempts
         retry_delays = [1, 3, 5, 8]  # Progressive delays: 1s, 3s, 5s, 8s
 
-        last_exception = None
+        last_exception: Exception | None = None
 
         for attempt in range(max_retries):
             try:
@@ -517,7 +531,7 @@ class OpenAICompatibleProvider(ModelProvider):
 
                 return ModelResponse(
                     content=content,
-                    usage=usage,
+                    usage=usage or {},
                     model_name=model_name,
                     friendly_name=self.FRIENDLY_NAME,
                     provider=self.get_provider_type(),
@@ -823,3 +837,8 @@ class OpenAICompatibleProvider(ModelProvider):
         except Exception as e:
             logging.error(f"Error processing image {image_path}: {e}")
             return None
+
+# Public re-export for freeze tools
+__all__ = [
+    "OpenAICompatibleProvider",
+]
